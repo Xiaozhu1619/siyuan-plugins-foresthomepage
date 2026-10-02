@@ -1,0 +1,18 @@
+# 打包产物：只作为 Release 附件发布，不进仓库
+package.zip
+
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# 开发期产物（预览截图、临时文件、调试用的旧测试副本）
+dev/shot-*.png
+dev/t.png
+dev/*-out.html
+dev/settings-shot.html
+dev/preview-*.html
+test/_dbg.js
+
+# WorkBuddy 的本地记忆与工作区数据（含个人笔记，不对外）
+.workbuddy/
