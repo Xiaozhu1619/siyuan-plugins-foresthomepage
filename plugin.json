@@ -2,24 +2,12 @@
   "name": "siyuan-plugins-foresthomepage",
   "author": "Xiaozhu1619",
   "url": "https://github.com/Xiaozhu1619/siyuan-plugins-foresthomepage",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "minAppVersion": "3.1.0",
   "backends": [
-    "windows",
-    "linux",
-    "darwin",
-    "ios",
-    "android",
-    "harmony",
-    "docker",
     "all"
   ],
   "frontends": [
-    "desktop",
-    "desktop-window",
-    "browser-desktop",
-    "mobile",
-    "browser-mobile",
     "all"
   ],
   "disabledInPublish": true,
