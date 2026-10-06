@@ -206,6 +206,9 @@ async function main() {
         }
     }
 
+    // 前端类型可切换，用来验证「手机端不自动打开主页」这条分支
+    let frontend = "desktop";
+
     const siyuanStub = {
         Plugin: Plugin,
         Setting: Setting,
@@ -217,7 +220,7 @@ async function main() {
             return {};
         },
         openMobileFileById: () => {},
-        getFrontend: () => "desktop",
+        getFrontend: () => frontend,
         fetchSyncPost: async (url, data) => {
             calls.api.push({ url: url, data: data });
             if (url === "/api/storage/getRecentDocs") {
@@ -323,6 +326,14 @@ async function main() {
     eq("parentPathLabel", T.parentPathLabel("/笔记/数据结构/树", "树"), "笔记 / 数据结构");
     eq("parentPathLabel \u65e0\u5c42\u7ea7", T.parentPathLabel("/树", "树"), "");
     eq("DEFAULT_SETTINGS \u542b onboarded", T.DEFAULT_SETTINGS.onboarded, false);
+    // 「打开思源时进入主页」的默认状态：关闭。升级不该改变用户原有的启动行为
+    eq("默认不自动打开主页", T.DEFAULT_SETTINGS.openOnLaunch, false);
+    eq("normalizeSwitch 缺键走 fallback", T.normalizeSwitch(undefined, false), false);
+    eq("normalizeSwitch null 走 fallback", T.normalizeSwitch(null, false), false);
+    eq("normalizeSwitch 字符串 true", T.normalizeSwitch("true", false), true);
+    eq("normalizeSwitch 数字 1", T.normalizeSwitch(1, false), true);
+    eq("normalizeSwitch 真布尔 false", T.normalizeSwitch(false, true), false);
+    eq("normalizeSwitch 手改的乱值走 fallback", T.normalizeSwitch("随便写的", false), false);
     ok("FALLBACK_POEMS \u6709\u5185\u5bb9", T.FALLBACK_POEMS.length >= 8);
     ok("fmtRelative \u5206\u949f", T.fmtRelative(Date.now() - 120000).indexOf("\u5206\u949f") >= 0);
 
@@ -377,6 +388,7 @@ async function main() {
     ok("setting.open \u5df2\u88ab\u5305\u88c5", plugin.setting.open !== siyuanStub.Setting.prototype.open);
 
     plugin.onLayoutReady();
+    eq("\u9ed8\u8ba4\u5173\u95ed\u65f6\u4e0d\u6392\u542f\u52a8\u961f", plugin.__launchTimer, null);
     eq("\u9876\u680f\u6309\u94ae\u6570\u91cf", calls.topBar.length, 1);
     eq("\u9876\u680f\u6309\u94ae\u4f4d\u7f6e\u5728\u5de6\u4fa7", calls.topBar[0].position, "left");
     eq("\u9876\u680f\u56fe\u6807\u4e3a SVG", calls.topBar[0].icon.indexOf("<svg") === 0, true);
@@ -701,10 +713,12 @@ async function main() {
     eq("\u9762\u677f\u5df2\u6253\u5f00", plugin.setting.openedWith, "\u68ee\u6797\u4e3b\u9875\u8bbe\u7f6e");
     ok("\u8349\u7a3f\u5df2\u521d\u59cb\u5316", plugin.__draft && plugin.__draft.userName === plugin.settings.userName);
     const titles = plugin.setting.items.map((i) => i.title);
+    // 「打开思源时进入主页」放在面板第一项：它决定用户每天第一眼看到什么，不该埋在折叠区域里
+    eq("启动开关排在面板最前", titles[0], "打开思源时进入主页");
     ["\u79f0\u547c", "\u7b2c\u4e8c\u884c\u6587\u6848", "\u80cc\u666f\u56fe", "\u4f7f\u7528\u65f6\u957f\u8bb0\u5f55",
         "\u663e\u793a\u7684\u5361\u7247", "\u641c\u7d22\u6846", "\u6062\u590d\u5361\u7247\u9ed8\u8ba4\u5c3a\u5bf8",
         "\u5feb\u901f\u8bbf\u95ee\u6761\u76ee\u5bbd\u5ea6", "\u5feb\u901f\u8bbf\u95ee\u5185\u5bb9",
-        "\u7075\u611f\u5f52\u5bbf", "\u91cd\u65b0\u8fd0\u884c\u5f15\u5bfc"].forEach((t) => {
+        "\u7075\u611f\u5f52\u5bbf", "\u91cd\u65b0\u8fd0\u884c\u5f15\u5bfc", "打开思源时进入主页"].forEach((t) => {
         ok("\u542b\u8bbe\u7f6e\u9879\uff1a" + t, titles.indexOf(t) >= 0);
     });
     ok("\u6240\u6709\u9879\u90fd\u7528 createActionElement\uff08\u6bcf\u6b21\u91cd\u5efa DOM\uff09",
@@ -748,11 +762,24 @@ async function main() {
        会盖掉插件写的 max-width（滑杆被拉满整行，数值被顶到另一头 = 大片空白），
        标题所在的 .fn__flex-1 还会独占一行。所以除开关外一律要显式写 direction:"row"。 */
     const dirs = plugin.setting.items.map((i) => i.direction);
+    const switchTitles = ["\u641c\u7d22\u6846", "打开思源时进入主页"];
     ok("\u6bcf\u4e2a\u8bbe\u7f6e\u9879\u90fd\u663e\u5f0f\u58f0\u660e\u4e86 direction", dirs.every((d) => d === "row" || d === "column"), JSON.stringify(dirs));
     eq("\u5f00\u5173\u7528 column", plugin.setting.items[titles.indexOf("\u641c\u7d22\u6846")].direction, "column");
+    eq("\u542f\u52a8\u5f00\u5173\u4e5f\u7528 column", plugin.setting.items[titles.indexOf("打开思源时进入主页")].direction, "column");
     ok("\u9664\u5f00\u5173\u5916\u4e00\u5f8b\u7528 row",
-        plugin.setting.items.every((it) => it === plugin.setting.items[titles.indexOf("\u641c\u7d22\u6846")] || it.direction === "row"),
-        plugin.setting.items.filter((it) => it.direction !== "row" && it.direction !== "column").map((i) => i.title).join(","));
+        plugin.setting.items.every((it) => switchTitles.indexOf(it.title) >= 0 || it.direction === "row"),
+        plugin.setting.items.filter((it) => it.direction !== "row" && switchTitles.indexOf(it.title) < 0).map((i) => i.title).join(","));
+
+    // 「打开思源时进入主页」：必须和「搜索框」是同一个开关构件、同一种排版，不能自造开关
+    const launchSwitch = built[titles.indexOf("打开思源时进入主页")];
+    const searchSwitch = built[titles.indexOf("\u641c\u7d22\u6846")];
+    eq("启动开关用思源原生 b3-switch", launchSwitch.tagName + "." + launchSwitch.className, "INPUT.b3-switch");
+    eq("启动开关与搜索框同款", searchSwitch.tagName + "." + searchSwitch.className, "INPUT.b3-switch");
+    eq("启动开关默认不勾选", launchSwitch.checked, false);
+    launchSwitch.checked = true;
+    launchSwitch.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    eq("勾选后写进草稿", plugin.__draft.openOnLaunch, true);
+    eq("勾选当下不改生效设置（草稿式面板）", plugin.settings.openOnLaunch, false);
 
     // 静态核对样式表：限宽必须写在能被思源认到的选择器上
     const cssText = fs.readFileSync(path.join(ROOT, "index.css"), "utf8");
@@ -781,6 +808,8 @@ async function main() {
     await plugin.applyDraft();
     eq("\u4fdd\u5b58\u540e\u751f\u6548", plugin.settings.userName, "\u6539\u8fc7\u7684\u540d\u5b57");
     ok("\u4fdd\u5b58\u540e\u5199\u5165\u78c1\u76d8", !!plugin.storage["settings.json"]);
+    eq("保存后启动开关生效", plugin.settings.openOnLaunch, true);
+    eq("保存后启动开关落盘 settings.json", plugin.storage["settings.json"].openOnLaunch, true);
     eq("\u4fdd\u5b58\u540e\u91cd\u7ed8\u95ee\u5019\u8bed", host.querySelector(".fh-hero__hi").textContent.indexOf("\u6539\u8fc7\u7684\u540d\u5b57") >= 0, true);
     plugin.settings.showSearch = true;
     plugin.refreshAllViews();
@@ -1246,6 +1275,76 @@ async function main() {
     ok("\u5378\u8f7d\u540e\u89c6\u56fe\u96c6\u5408\u4e3a\u7a7a", plugin.views.size === 0);
     plugin.onunload();
     ok("onunload \u53ef\u91cd\u590d\u8c03\u7528", true);
+
+    /* ---------------- 启动即进主页 ---------------- */
+
+    console.log("\n[15] 启动即进主页");
+
+    // 造一份「上次退出时的配置」，再完整走一遍 onload + onLayoutReady
+    const boot = async (saved) => {
+        const p = new Cls({ app: {}, name: "siyuan-plugins-foresthomepage", displayName: "森林主页", i18n: zhI18n });
+        p.storage["settings.json"] = saved;
+        await p.onload();
+        p.onLayoutReady();
+        return p;
+    };
+    const half = Math.floor(T.LAUNCH_HOMEPAGE_DELAY / 2);
+    const HOMEPAGE_TAB = "siyuan-plugins-foresthomepagehomepage";
+
+    // 思源是先 setLayoutReady() 再回调插件 onLayoutReady，也就是说插件拿到钩子时
+    // 上次的标签已经恢复完了，延迟只需让过思源自己那次标签栏重算（300ms）。
+    ok("启动延迟只需等思源自己的收尾", T.LAUNCH_HOMEPAGE_DELAY <= 400, String(T.LAUNCH_HOMEPAGE_DELAY));
+
+    // 1) 老版本升级上来的配置里根本没有这个键 —— 按默认关闭，不能凭空改变用户的启动行为
+    calls.openTab.length = 0;
+    const pLegacy = await boot({ onboarded: true, userName: "老用户" });
+    eq("老配置按默认关闭处理", pLegacy.settings.openOnLaunch, false);
+    eq("老配置不排启动队", pLegacy.__launchTimer, null);
+    await wait(T.LAUNCH_HOMEPAGE_DELAY + 240);
+    eq("老配置启动后不会自动开主页", calls.openTab.length, 0);
+
+    // 2) 开关打开：等思源恢复完上次的标签再切到主页
+    calls.openTab.length = 0;
+    const pOn = await boot({ onboarded: true, openOnLaunch: true });
+    eq("开启后读到 true", pOn.settings.openOnLaunch, true);
+    ok("开启后已排队等待", !!pOn.__launchTimer);
+    await wait(half);
+    eq("延迟未到时不抢跑", calls.openTab.length, 0);
+    await wait(T.LAUNCH_HOMEPAGE_DELAY - half + 260);
+    eq("延迟后自动打开主页", calls.openTab.length, 1);
+    eq("打开的正是主页页签", calls.openTab[0].custom.id, HOMEPAGE_TAB);
+    eq("排队标记已释放定时器", pOn.__launchTimer, null);
+
+    // 3) 排队期间把开关关掉（等价于设置面板里取消勾选并确定）—— 不该再打开
+    calls.openTab.length = 0;
+    const pCancel = await boot({ onboarded: true, openOnLaunch: true });
+    await wait(120);
+    pCancel.settings.openOnLaunch = false;
+    await wait(T.LAUNCH_HOMEPAGE_DELAY + 240);
+    eq("排队期间关掉开关就不再打开", calls.openTab.length, 0);
+
+    // 4) 首次安装还没走完引导：引导自己以「进入主页」收尾，启动时不要抢
+    calls.openTab.length = 0;
+    const pFresh = await boot({ openOnLaunch: true });
+    eq("未完成引导时设置仍是 true", pFresh.settings.openOnLaunch, true);
+    await wait(900);   // 引导本身有 700ms 延迟
+    ok("首次安装时先弹引导", !!pFresh.onboardingDialog);
+    eq("引导期间不抢着打开主页", calls.openTab.length, 0);
+    if (pFresh.onboardingDialog) {
+        pFresh.onboardingDialog.destroy();
+        await wait(20);
+    }
+
+    // 5) 手机端：主页是整屏浮层，启动不自动盖上来
+    frontend = "mobile";
+    const pMobile = await boot({ onboarded: true, openOnLaunch: true });
+    await wait(T.LAUNCH_HOMEPAGE_DELAY + 240);
+    eq("手机端不自动打开主页", calls.openTab.length, 0);
+    eq("手机端也不会自动弹浮层", pMobile.overlayEl, null);
+    frontend = "desktop";
+
+    [pLegacy, pOn, pCancel, pFresh, pMobile].forEach((p) => p.onunload());
+    ok("启动开关的定时器随卸载清理", [pOn, pCancel].every((p) => !p.__launchTimer));
 
     /* ---------------- 结果 ---------------- */
 

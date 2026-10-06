@@ -14,6 +14,8 @@ It sets out to be an entrance with no complicated features at all, one that simp
 
 **Open it** from the homepage icon at the far left of the top bar, or via the "Open Homepage" command. It opens as a regular tab. Right-click the top bar icon for quick access to settings or the setup wizard.
 
+Want SiYuan to **land on the homepage as soon as it starts**? Turn on **Settings → Open the homepage on launch** (the first item in the panel; off by default, takes effect on the next start).
+
 - **Greeting (three lines)**
   - Line 1: a time-aware salutation plus your name, e.g. "Good evening, Alex"
   - Line 2: a short line — a different one each day by default (built-in list), or your own fixed sentence
@@ -75,6 +77,7 @@ Manual install:
 | Background dim | 0 - 80, raise it when the image is too bright | 28 |
 | Visible cards | Card management: tick to show, untick to remove, plus show all / hide all / reset order | all |
 | Search box | Whether to show the search box | on |
+| Open the homepage on launch | When on, SiYuan switches to the homepage on the next start; an already-open homepage tab is focused instead of duplicated. Not applied on mobile, in read-only mode, or during the first-run wizard | off |
 | Quick access item width | Minimum width per item; decides how many columns the quick access card fits (120 - 320 px) | 176 px |
 | Quick access contents | Every pinned document and group, with remove / delete group / clear all | — |
 | Usage time record | Clear the locally accumulated usage time | — |
@@ -103,6 +106,15 @@ Manual install:
 - Search is a `LIKE` match, not tokenized full-text; the first query on a very large workspace may take a moment.
 - On touch devices cards can only be dragged by the grip, so that dragging does not fight page scrolling.
 - In read-only / publish mode, notes and settings are not persisted to disk.
+- With "Open the homepage on launch" on, the homepage shows up about 0.3 s after startup — the time SiYuan needs to finish restoring your previous tabs and recalculating the tab bar; waiting it out keeps the plugin from fighting that final pass over focus.
+
+## Changelog
+
+Only the last three releases are listed here; see [CHANGELOG.md](https://github.com/Xiaozhu1619/siyuan-plugins-foresthomepage/blob/main/CHANGELOG.md) for the full history.
+
+- **v0.7.0** (2026-10-06): new "Open the homepage on launch" switch (first item in the settings panel, off by default, effective on the next start); startup delay cut from 1.2 s to 0.3 s; shorter store description.
+- **v0.6.1** (2026-10-02): fixed the platform declarations in `plugin.json` to pass the bazaar PR check.
+- **v0.6.0** (2026-10-02): first bazaar release.
 
 ## License
 

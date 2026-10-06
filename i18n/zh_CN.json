@@ -141,6 +141,8 @@
   "setDailyPath": "日记路径模板",
   "setDailyPathDesc": "点击日历空白日期时新建日记的路径。可用 {yyyy} {MM} {dd} {yyyy-MM-dd} 占位符",
   "setAdvanced": "其他",
+  "setOpenOnLaunch": "打开思源时进入主页",
+  "setOpenOnLaunchDesc": "开启后，下次启动思源自动切到主页；主页标签已经打开时直接切过去，不会重复新建。手机端、只读模式与首次引导期间不生效",
   "setRerunOnboarding": "重新运行引导",
   "setRerunOnboardingDesc": "再次打开首次安装时的设置向导",
   "setRerunOnboardingBtn": "运行引导",

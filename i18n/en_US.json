@@ -141,6 +141,8 @@
   "setDailyPath": "Daily note path",
   "setDailyPathDesc": "Path used when creating a daily note from an empty calendar day. Supports {yyyy} {MM} {dd} {yyyy-MM-dd}",
   "setAdvanced": "Other",
+  "setOpenOnLaunch": "Open the homepage on launch",
+  "setOpenOnLaunchDesc": "When on, SiYuan switches to the homepage the next time it starts. An already-open homepage tab is focused instead of duplicated. Not applied on mobile, in read-only mode, or during the first-run wizard",
   "setRerunOnboarding": "Setup wizard",
   "setRerunOnboardingDesc": "Open the first-run wizard again",
   "setRerunOnboardingBtn": "Run wizard",

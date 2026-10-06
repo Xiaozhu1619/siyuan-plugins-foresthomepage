@@ -283,6 +283,9 @@ function pixelsToSpan(pixels, unit, gap, presets) {
 
 const DEFAULT_SETTINGS = {
     onboarded: false,
+    // 启动思源时是否自动切到主页。默认关闭：插件升级不该改变用户原有的启动行为，
+    // 也不该在用户还没看过引导时就抢走首屏。
+    openOnLaunch: false,
     userName: "",            // 默认留空，由引导或设置面板填写
     suffixMode: "daily",       // daily = 每天从诗句池换一句，custom = 固定一句
     greetingSuffix: "",
@@ -304,6 +307,19 @@ const DEFAULT_SETTINGS = {
 
 const SEARCH_DEBOUNCE = 220;
 const SEARCH_LIMIT = 12;
+
+/**
+ * 「打开思源时进入主页」等待多久再开。
+ *
+ * 为什么不是「立刻」：思源启动时有自己的一段收尾 —— 恢复完布局和上次的标签、
+ * 触发插件的 onLayoutReady 之后，还会在 TIMEOUT_TRANSITION（300ms）后跑一次
+ * 标签栏重算。等过这一下再切，主页就不会和思源的收尾动作抢焦点。
+ *
+ * 为什么不需要更久：思源是先 `pluginManager.setLayoutReady()` 再回调插件的
+ * onLayoutReady，也就是说插件拿到 onLayoutReady 时，上次的标签早就恢复完了，
+ * 不存在「抢在前头开标签、随后被恢复的标签盖掉」的问题。
+ */
+const LAUNCH_HOMEPAGE_DELAY = 300;
 
 
 /* ------------------------------------------------------------------ *
@@ -368,6 +384,35 @@ function clampInt(value, min, max, fallback) {
         return fallback;
     }
     return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * 开关类设置的归一化。
+ *
+ * 设置面板存进去的永远是布尔值，这里主要是为了兜住两种情况：
+ *   1) 老版本的 settings.json 里没有这个键 —— 落到 fallback（新开关一律 false，
+ *      升级不会悄悄改变用户原有的行为）；
+ *   2) 用户手改了 settings.json，写成 "true" / 1 / on 这类非布尔写法。
+ */
+function normalizeSwitch(value, fallback) {
+    const dft = fallback === true;
+    if (value === undefined || value === null || value === "") {
+        return dft;
+    }
+    if (typeof value === "boolean") {
+        return value;
+    }
+    if (value === 1 || value === 0) {
+        return value === 1;
+    }
+    const text = String(value).trim().toLowerCase();
+    if (text === "true" || text === "1" || text === "on" || text === "yes") {
+        return true;
+    }
+    if (text === "false" || text === "0" || text === "off" || text === "no") {
+        return false;
+    }
+    return dft;
 }
 
 function genId() {
@@ -987,6 +1032,8 @@ class ForestHomepage extends Plugin {
         this.notebooks = [];
         this.__draft = null;
         this.searchTimer = null;
+        this.__launchTimer = null;
+        this.__launchHandled = false;
 
         const saved = await this.loadData(SETTINGS_FILE);
         this.settings = deepCopy(DEFAULT_SETTINGS);
@@ -1000,6 +1047,7 @@ class ForestHomepage extends Plugin {
         this.settings.quickItemMin = clampInt(this.settings.quickItemMin,
             QUICK_ITEM_MIN_RANGE[0], QUICK_ITEM_MIN_RANGE[1], QUICK_ITEM_MIN_DEFAULT);
         this.settings.cardSize = normalizeCardSize(this.settings.cardSize);
+        this.settings.openOnLaunch = normalizeSwitch(this.settings.openOnLaunch, DEFAULT_SETTINGS.openOnLaunch);
 
         // 0.2.x 用的是 noteNotebook，迁移到更通用的 noteTarget
         if (saved && saved.noteNotebook && !(saved.noteTarget && saved.noteTarget.type && saved.noteTarget.type !== "none")) {
@@ -1093,11 +1141,20 @@ class ForestHomepage extends Plugin {
                 }
             }, 700);
         }
+
+        // 启动即进主页：开关开着才排队，且只在本次启动里跑一次
+        if (this.settings.openOnLaunch) {
+            this.scheduleLaunchHomepage();
+        }
     }
 
     onunload() {
         this.stopUsageTracking();
         this.closeDocMenu();
+        if (this.__launchTimer) {
+            window.clearTimeout(this.__launchTimer);
+            this.__launchTimer = null;
+        }
         this.views.forEach((view) => {
             this.stopClock(view);
             this.teardownSearch(view);
@@ -1146,6 +1203,48 @@ class ForestHomepage extends Plugin {
     }
 
     /* ---------------- 打开主页 ---------------- */
+
+    /**
+     * 设置项「打开思源时进入主页」。
+     *
+     * 生效时机：下次启动思源时。设置面板是「确定后保存」的草稿式面板，开关本身
+     * 属于启动行为 —— 本次启动的时刻早就过去了，所以切换开关不会当场打开或关闭
+     * 主页标签，只影响下一次启动。
+     *
+     * 时序：思源启动时先把 config.uiLayout 里的布局与上次的标签恢复好，再调用
+     * pluginManager.setLayoutReady() —— 插件的 onLayoutReady 正是被它触发的。
+     * 所以在这里开标签不会被恢复流程盖掉，只需让过思源自己那次 300ms 的标签栏
+     * 重算（见 LAUNCH_HOMEPAGE_DELAY）。
+     *
+     * 已经打开着主页标签（含被思源恢复出来的那个）时，openTab 会直接切过去，
+     * 不会重复开第二个 —— 复用的是同一个 custom.id。
+     */
+    scheduleLaunchHomepage() {
+        if (this.__launchHandled) {
+            return;      // 一次启动只排一次队
+        }
+        this.__launchHandled = true;
+        this.__launchTimer = window.setTimeout(() => {
+            this.__launchTimer = null;
+            // 排队期间用户在设置里把开关关掉了，就不要再开
+            if (!this.settings.openOnLaunch) {
+                return;
+            }
+            // 首次安装：引导自带「进入主页」收尾，别去抢它的位置
+            if (!this.settings.onboarded) {
+                return;
+            }
+            // 手机端主页是整屏浮层，启动就被盖住一层没法用，只做桌面端
+            if (this.isMobile) {
+                return;
+            }
+            // 只读 / 发布模式不主动开标签
+            if (this.isReadonly) {
+                return;
+            }
+            this.openHomepage();
+        }, LAUNCH_HOMEPAGE_DELAY);
+    }
 
     openHomepage() {
         if (this.isMobile) {
@@ -3752,6 +3851,18 @@ class ForestHomepage extends Plugin {
 
         const draft = () => plugin.__draft || plugin.settings;
 
+        // —— 启动行为 ——
+        // 放在面板最顶上：「一启动就进主页」是决定用户每天第一眼看到什么的选择，
+        // 该在第一屏就能改到，而不是埋在「其他」里。
+        add(
+            this.t("setOpenOnLaunch", "打开思源时进入主页"),
+            this.t("setOpenOnLaunchDesc", "开启后，下次启动思源自动切到主页；主页标签已经打开时直接切过去，不会重复新建。手机端、只读模式与首次引导期间不生效"),
+            () => this.buildSwitch(draft().openOnLaunch === true, (checked) => {
+                draft().openOnLaunch = checked;
+            }),
+            "column"   // 开关留在标题右侧，与「搜索框」同一套长相
+        );
+
         // —— 问候语 ——
         add(
             this.t("setUserName", "称呼"),
@@ -3897,16 +4008,9 @@ class ForestHomepage extends Plugin {
         add(
             this.t("setSearch", "搜索框"),
             this.t("setSearchDesc", "在问候语下方显示搜索框，可快速搜索文档标题与正文"),
-            () => {
-                const box = document.createElement("input");
-                box.type = "checkbox";
-                box.className = "b3-switch";
-                box.checked = draft().showSearch !== false;
-                box.addEventListener("change", () => {
-                    draft().showSearch = box.checked;
-                });
-                return box;
-            },
+            () => this.buildSwitch(draft().showSearch !== false, (checked) => {
+                draft().showSearch = checked;
+            }),
             "column"   // 开关留在标题右侧，用思源原生的那一套
         );
 
@@ -4085,6 +4189,8 @@ class ForestHomepage extends Plugin {
         next.quickItemMin = clampInt(draft.quickItemMin,
             QUICK_ITEM_MIN_RANGE[0], QUICK_ITEM_MIN_RANGE[1], QUICK_ITEM_MIN_DEFAULT);
         next.cardSize = normalizeCardSize(draft.cardSize);
+        next.openOnLaunch = normalizeSwitch(draft.openOnLaunch, DEFAULT_SETTINGS.openOnLaunch);
+        next.showSearch = draft.showSearch !== false;
         const t = draft.noteTarget || {};
         next.noteTarget = {
             type: ["none", "notebook", "doc"].indexOf(t.type) >= 0 ? t.type : "none",
@@ -4096,6 +4202,23 @@ class ForestHomepage extends Plugin {
         await this.persistSettings();
         this.refreshAllViews();
         showMessage(this.t("settingsSaved", "设置已保存"));
+    }
+
+    /**
+     * 开关行：思源原生的 `<input class="b3-switch">` + direction:"column"。
+     * column 分支下标题在左、开关在右，是思源自己的开关长相；也不要给它加
+     * fn__size200，否则会被 `.config-item>.fn__size200` 那条规则撑成整行。
+     * 「搜索框」与「打开思源时进入主页」共用这一个构件，保证两处长得一模一样。
+     */
+    buildSwitch(checked, onChange) {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.className = "b3-switch";
+        box.checked = checked === true;
+        box.addEventListener("change", () => {
+            onChange(box.checked);
+        });
+        return box;
     }
 
     /**
@@ -4790,6 +4913,7 @@ ForestHomepage.__test = {
     esc: esc,
     pad2: pad2,
     clampInt: clampInt,
+    normalizeSwitch: normalizeSwitch,
     sqlQuote: sqlQuote,
     normalizeOrder: normalizeOrder,
     toBgUrl: toBgUrl,
@@ -4820,6 +4944,7 @@ ForestHomepage.__test = {
     WIDTH_PRESETS: WIDTH_PRESETS,
     HEIGHT_PRESETS: HEIGHT_PRESETS,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    LAUNCH_HOMEPAGE_DELAY: LAUNCH_HOMEPAGE_DELAY,
     ALL_CARDS: ALL_CARDS,
     FALLBACK_POEMS: FALLBACK_POEMS,
 };
